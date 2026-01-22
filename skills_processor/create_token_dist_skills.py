@@ -16,9 +16,9 @@ def get_dist_new(array):
 
 # Chỉ lấy skill_cleaned của n-gram skills (len > 1) - đúng như md gốc
 n_grams = [
-    skills_db[key]['skills_cleaned']
+    skills_db[key]['skill_cleaned']
     for key in skills_db
-    if skills_db[key]['skills_len'] > 1
+    if skills_db[key]['skill_len'] > 1
 ]
 
 n_gram_dist = get_dist_new(n_grams)
