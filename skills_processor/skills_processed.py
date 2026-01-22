@@ -90,18 +90,18 @@ for item in data:
     abbrev = extract_abbreviation(skills_name_raw)
     
     processed_skillss[skills_id] = {
-        "skills_name": skills_name_raw,
-        "skills_type": skills_type,
-        "skills_cleaned": skills_cleaned,
-        "skills_len": skills_len,
-        "skills_lemmed": skills_lemmed,
-        "skills_stemmed": skills_stemmed,
+        "skill_name": skills_name_raw,
+        "skill_type": skills_type,
+        "skill_cleaned": skills_cleaned,
+        "skill_len": skills_len,
+        "skill_lemmed": skills_lemmed,
+        "skill_stemmed": skills_stemmed,
         "match_on_stemmed": (skills_len == 1),
         "abbreviation": abbrev
     }
 
 # Lưu file cuối cùng
-output_file = './skillNer/data/skillss_processed.json'
+output_file = './skillNer/data/skills_processed.json'
 with open(output_file, 'w', encoding='utf-8') as f:
     json.dump(processed_skillss, f, ensure_ascii=False, indent=4)
 
