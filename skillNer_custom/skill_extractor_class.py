@@ -3,13 +3,13 @@
 # installed packs
 from spacy import displacy
 # my packs
-from skillNer.text_class import Text
-from skillNer.matcher_class import Matchers, SkillsGetter
-from skillNer.utils import Utils
-from skillNer.general_params import SKILL_TO_COLOR
+from skillNer_custom.text_class import Text
+from skillNer_custom.matcher_class import Matchers, SkillsGetter
+from skillNer_custom.utils import Utils
+from skillNer_custom.general_params import SKILL_TO_COLOR
 
-from skillNer.visualizer.html_elements import DOM, render_phrase
-from skillNer.visualizer.phrase_class import Phrase
+from skillNer_custom.visualizer.html_elements import DOM, render_phrase
+from skillNer_custom.visualizer.phrase_class import Phrase
 
 
 class SkillExtractor:

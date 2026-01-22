@@ -3,8 +3,8 @@ from typing import List
 # installed packs
 #
 # my packs
-from skillNer.cleaner import Cleaner, stem_text, find_index_phrase
-from skillNer.general_params import S_GRAM_REDUNDANT
+from skillNer_custom.cleaner import Cleaner, stem_text, find_index_phrase
+from skillNer_custom.general_params import S_GRAM_REDUNDANT
 
 
 # building block of text

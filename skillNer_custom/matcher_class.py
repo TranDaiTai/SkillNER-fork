@@ -3,7 +3,7 @@ from typing import List
 # installed packs
 #
 # my packs
-from skillNer.text_class import Text
+from skillNer_custom.text_class import Text
 
 
 class Matchers:

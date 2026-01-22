@@ -10,7 +10,7 @@ import json
 import spacy
 import re
 from nltk.stem import PorterStemmer
-from skillNer.cleaner import Cleaner
+from skillNer_custom.cleaner import Cleaner
 
 # Load spaCy model
 nlp = spacy.load("en_core_web_lg")

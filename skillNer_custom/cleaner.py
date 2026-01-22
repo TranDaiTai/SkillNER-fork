@@ -4,7 +4,7 @@ from nltk.stem import PorterStemmer
 # native packs
 from typing import List
 # my pack
-from skillNer.general_params import S_GRAM_REDUNDANT, LIST_PUNCTUATIONS
+from skillNer_custom.general_params import S_GRAM_REDUNDANT, LIST_PUNCTUATIONS
 
 
 # load nlp
