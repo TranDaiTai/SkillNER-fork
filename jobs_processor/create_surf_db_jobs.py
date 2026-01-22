@@ -1,118 +1,137 @@
-# create_surf_db_jobs.py (final version)
+# create_surf_db_jobs.py (final version - cleaned & fixed)
+# ============
+# Tạo job_db_relax_20.json từ jobs_processed.json + token_dist_job.json
+# Tương tự skill_db_relax_20.json nhưng dành cho job titles
+# ============
 
 import re
 import collections
 import json
+from pathlib import Path
 
-with open('./skillNer/data/jobs_processed.json', 'r') as f:
-    job_DB = json.load(f)
+# Paths
+PROCESSED_PATH = './skillNer/data/jobs_processed.json'
+DIST_PATH      = './skillNer/data/token_dist_job.json'
+OUTPUT_PATH    = './skillNer/data/job_db_relax_20.json'
 
-with open('./skillNer/data/token_dist_job.json', 'r') as f:  # tên file đúng
-    dist = json.load(f)
+RELAX_PARAM = 0.2  # ngưỡng cho token đầu (thường noisy với job → có thể comment)
 
-RELAX_PARAM = 0.2
+def load_json(path):
+    if not Path(path).exists():
+        raise FileNotFoundError(f"Không tìm thấy: {path}")
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+job_DB = load_json(PROCESSED_PATH)
+dist   = load_json(DIST_PATH)
+
 new_job_db = {}
 
-for key in job_DB:
-    high_surface_form = {}
-    low_surface_form = []
+for key, job in job_DB.items():
+    high_forms = {}
+    low_forms  = []
     match_on_tokens = False
 
-    job_len = job_DB[key]['job_len']
-    job_name = job_DB[key]['job_name']
-    job_type = job_DB[key]['job_type']
-    clean_name = job_DB[key]['job_cleaned']
-    job_lemmed = job_DB[key]['job_lemmed']
-    job_stemmed = job_DB[key]['job_stemmed']
-    abv = job_DB[key]['abbreviation']
-    uni_match_on_stemmed = job_DB[key]['match_on_stemmed']
+    job_len     = job.get('job_len', 1)
+    job_name    = job.get('job_name', '')
+    job_type    = job.get('job_type', '')
+    clean_name  = job.get('job_cleaned', '')
+    lemmed      = job.get('job_lemmed', '')
+    stemmed     = job.get('job_stemmed', '')
+    abbrev      = job.get('abbreviation', '')
+    match_stem  = job.get('match_on_stemmed', False)
 
-    if abv != '':
-        high_surface_form['abv'] = abv
+    if abbrev:
+        high_forms['abv'] = abbrev
 
-    # Unigram
     if job_len == 1:
-        high_surface_form['full'] = clean_name
-        if uni_match_on_stemmed:
-            low_surface_form.append(job_stemmed)
+        high_forms['full'] = clean_name
+        if match_stem:
+            low_forms.append(stemmed)
 
-    # Bigram
-    if job_len == 2:
-        high_surface_form['full'] = job_lemmed
-        stemmed_tokens = job_stemmed.split(' ')
-        inv_stemmed_tokens = stemmed_tokens[::-1]
-        low_surface_form.append(job_stemmed)
-        low_surface_form.append(' '.join(inv_stemmed_tokens))
+    elif job_len == 2:
+        high_forms['full'] = lemmed
+        stemmed_tokens = stemmed.split()
+        if stemmed_tokens:
+            low_forms.append(stemmed)
+            low_forms.append(' '.join(stemmed_tokens[::-1]))
 
-        last = stemmed_tokens[-1]
-        start = stemmed_tokens[0]
+            last  = stemmed_tokens[-1]
+            first = stemmed_tokens[0]
 
-        if dist.get(last, 0) == 1:
-            low_surface_form.append(last)
-        # Comment dòng dưới nếu thấy noisy quá
-        if dist.get(start, 0) / dist.get(last, 1) < RELAX_PARAM:
-            low_surface_form.append(start)
+            if dist.get(last, 0) == 1:
+                low_forms.append(last)
 
-    # N-gram >2
-    if job_len > 2:
-        high_surface_form['full'] = job_lemmed
+            # Token đầu thường noisy trong job titles → comment nếu muốn
+            if dist.get(first, 0) / dist.get(last, 1) < RELAX_PARAM:
+                low_forms.append(first)
+
+    elif job_len > 2:
+        high_forms['full'] = lemmed
         match_on_tokens = True
 
     new_job_db[key] = {
         'job_name': job_name,
         'job_type': job_type,
         'job_len': job_len,
-        'high_surface_forms': high_surface_form,  # sửa typo
-        'low_surface_forms': low_surface_form,
+        'high_surfce_forms': high_forms,   # giữ typo như SkillNer gốc
+        'low_surface_forms': low_forms,
         'match_on_tokens': match_on_tokens
     }
 
-# Lọc low_surface_forms cho bigram (giữ unique token thật sự unique)
-list_unique = []
-for key in new_job_db:
-    if new_job_db[key]['job_len'] == 2:
-        uniques = [l for l in new_job_db[key]['low_surface_forms'] if len(l.split(' ')) == 1]
-        list_unique.extend(uniques)
+# === Lọc unique token cho bigram ===
+unique_tokens_bigram = []
+for entry in new_job_db.values():
+    if entry['job_len'] == 2:
+        uniques = [f for f in entry['low_surface_forms'] if ' ' not in f]
+        unique_tokens_bigram.extend(uniques)
 
-counter_unique = collections.Counter(list_unique)
+token_counter = collections.Counter(unique_tokens_bigram)
 
-for key in new_job_db:
-    if new_job_db[key]['job_len'] == 2:
-        filtered_low = []
-        for l in new_job_db[key]['low_surface_forms']:
-            if len(l.split(' ')) == 1:
-                if counter_unique[l] == 1:
-                    filtered_low.append(l)
-            else:
-                filtered_low.append(l)
-        new_job_db[key]['low_surface_forms'] = filtered_low
+for entry in new_job_db.values():
+    if entry['job_len'] == 2:
+        filtered = []
+        for form in entry['low_surface_forms']:
+            if ' ' in form or token_counter[form] == 1:
+                filtered.append(form)
+        entry['low_surface_forms'] = filtered
 
-# Thêm abbreviation từ parentheses (nếu có, ví dụ CEO (Chief Executive Officer))
-def remove_btwn_par(str_):
-    return re.sub(r"[$$ \[].*?[ $$\]]", "", str_)
+# === Extract viết tắt cho n-gram job (>2) ===
+rx = r"\b[A-Z](?:[.&]?[A-Z])+\b"  # CEO, CTO, CFO, VP, ...
 
-def extract_sub_forms(name):
-    return re.findall(r"\b[A-Z](?:[.&]?[A-Z])+\b", name)
+def remove_parentheses(text: str) -> str:
+    return re.sub(r"[\(\[].*?[\)\]]", "", text).strip()
 
-subs = []
-for item in job_DB.values():
-    if item['job_len'] > 1:
-        clean_name_no_par = remove_btwn_par(item['job_name'])
-        abvs = extract_sub_forms(clean_name_no_par)
-        subs.extend(abvs)
+all_abbrevs = []
+for job in job_DB.values():
+    if job.get('job_len', 0) > 1:
+        clean_no_par = remove_parentheses(job['job_name'])
+        abvs = re.findall(rx, clean_no_par)
+        all_abbrevs.extend(abvs)
 
-abv_counter = collections.Counter(subs)
+abv_counter = collections.Counter(all_abbrevs)
 
-for key in new_job_db:
-    if new_job_db[key]['job_len'] > 2:
-        clean_name_no_par = remove_btwn_par(new_job_db[key]['job_name'])
-        potential_abvs = extract_sub_forms(clean_name_no_par)
-        for a in potential_abvs:
-            if abv_counter[a] == 1:
-                new_job_db[key]['low_surface_forms'].append(a)
+for entry in new_job_db.values():
+    if entry['job_len'] > 2:
+        clean_no_par = remove_parentheses(entry['job_name'])
+        candidates = re.findall(rx, clean_no_par)
+        for cand in candidates:
+            if abv_counter[cand] == 1 and cand not in entry['low_surface_forms']:
+                entry['low_surface_forms'].append(cand)
 
-# Save final
-with open('./skillNer/data/job_db_relax_20.json', 'w', encoding='utf-8') as f:
+# === Save ===
+with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
     json.dump(new_job_db, f, ensure_ascii=False, indent=4)
 
-print("job_db_relax_20.json created successfully!")
+# Debug info
+total = len(new_job_db)
+with_abv = sum(1 for e in new_job_db.values() if e['high_surfce_forms'].get('abv'))
+with_low = sum(1 for e in new_job_db.values() if e['low_surface_forms'])
+match_tok = sum(1 for e in new_job_db.values() if e['match_on_tokens'])
+
+print("\nHOÀN THÀNH!")
+print(f"- Tổng job titles: {total}")
+print(f"- Có abbreviation (high): {with_abv}")
+print(f"- Có low surface forms: {with_low}")
+print(f"- match_on_tokens (len >2): {match_tok}")
+print(f"File lưu tại: {OUTPUT_PATH}")
