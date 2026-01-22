@@ -104,8 +104,8 @@ class PipelineRunner:
         print(f"\n Bước 3: Tạo {self.token_dist_path.name}")
         token_gen = TokenDistGenerator(input_dir=str(self.processed_path.parent))
         try:
-            token_dist = token_gen.generate_from_file("skills_processed.json")
-            token_gen.save(token_dist, "token_dist_skill.json")
+            token_dist = token_gen.generate_from_file(processed_filename=self.processed_path.name)
+            token_gen.save(token_dist, str(self.token_dist_path))
             print(f"   → Đã tạo token dist: {self.token_dist_path}")
             return True
         except Exception as e:
