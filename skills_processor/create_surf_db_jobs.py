@@ -50,8 +50,8 @@ for key in job_DB:
         if dist.get(last, 0) == 1:
             low_surface_form.append(last)
         # Comment dòng dưới nếu thấy noisy quá
-        # if dist.get(start, 0) / dist.get(last, 1) < RELAX_PARAM:
-        #     low_surface_form.append(start)
+        if dist.get(start, 0) / dist.get(last, 1) < RELAX_PARAM:
+            low_surface_form.append(start)
 
     # N-gram >2
     if job_len > 2:
