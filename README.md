@@ -161,3 +161,52 @@ Besides, it will help you setup SkillNer on your local machine, in case you are 
 - [Visit our website](https://skillner.vercel.app/) to learn about SkillNer features, how it works, and particularly explore our roadmap
 - Get started with SkillNer and get to know its API by visiting the [Documentation](https://badr-moufad.github.io/SkillNER/get_started.html)
 - [Test our Demo](https://share.streamlit.io/anasaito/skillner_demo/index.py) to see some of SkillNer capabilities
+
+
+
+## Cập Nhật Pipeline & Hướng Dẫn Sử Dụng Mạng (Network)
+
+- **Tình trạng:** Tôi đã hoàn thiện quy trình pipeline cho `skills` và đồng thời thêm mới quy trình cho `job` — toàn bộ xử lý (fetch raw, tiền xử lý, tạo surface DB và token distributions) đã được triển khai trong thư mục `skills_processor` và `jobs_processor`.
+
+- **Giải thích nhanh các module trong `skills_processor`:**
+    - `fetch_raw_skill.py`: Thu thập dữ liệu thô (scrape / API) và lưu vào `data/raw_skillss.json`.
+    - `create_surf_db_skills.py`: Chuẩn hoá và xây dựng surface database (tên kỹ năng, biến thể) và lưu vào `data/skill_db_relax_20.json`.
+    - `create_token_dist_skills.py`: Tạo phân phối token/token-dist cho các skills, lưu vào `data/token_dist_skill.json`.
+    - `skills_processed.py`: Orchestrator / helper để chạy tuần tự các bước trên và xuất các artifacts đã xử lý.
+
+- **Giải thích nhanh các module trong `jobs_processor`:**
+    - `fetch_raw_job.py`: Thu thập mô tả công việc thô và lưu vào `data/raw_jobs.json`.
+    - `create_surf_db_jobs.py`: Chuẩn hoá tên công việc / cụm từ liên quan và tạo surface DB cho jobs, lưu vào `data/job_db_relax_20.json`.
+    - `create_token_dist_jobs.py`: Tạo token distribution cho dữ liệu job, lưu vào `data/token_dist_job.json`.
+    - `jobs_processed.py`: Orchestrator cho pipeline job, cho phép tái sinh các artifact đã xử lý hoặc chạy từng bước.
+
+- **Chỉnh network để fetch dữ liệu đã xử lý sẵn từ repo của bạn:**
+    - File `skillNer_custom/network/remote_db.py` đã được cập nhật để hỗ trợ cấu hình linh hoạt:
+        - Truyền tham số `repo` khi khởi tạo `RemoteBucket`, hoặc
+        - Đặt biến môi trường `SKILLNER_REMOTE_REPO` (giá trị dạng `owner/repo`) để lớp tự động dùng repo đó, hoặc
+        - Nếu bạn muốn đọc file cục bộ, đặt `repo='local'` (sẽ đọc các file JSON trong thư mục `data/` của package).
+
+    - Ví dụ sử dụng (Python):
+
+```python
+from skillNer_custom.network.remote_db import RemoteBucket
+
+# fetch từ repo GitHub (owner/repo)
+b = RemoteBucket(branch="main", repo="youruser/yourrepo")
+skill_db = b.fetch_remote("SKILL_DB")
+
+# hoặc dùng dữ liệu local đã có trong thư mục `data/`
+b_local = RemoteBucket(repo="local")
+skill_db_local = b_local.fetch_remote("SKILL_DB")
+```
+
+    - Hoặc đặt biến môi trường (Windows PowerShell):
+
+```powershell
+setx SKILLNER_REMOTE_REPO "youruser/yourrepo"
+```
+
+    - Lưu ý: trong repo của bạn cần giữ nguyên cấu trúc `data/` với tên file như phía trên để `RemoteBucket` có thể tìm đúng đường dẫn.
+
+
+
