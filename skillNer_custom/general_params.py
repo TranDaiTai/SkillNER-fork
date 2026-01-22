@@ -52,10 +52,10 @@ try:
 except:
     TOKEN_DIST = bucket.fetch_remote("TOKEN_DIST")
     # dump data
-    with open('data/token_dist_skill.json', 'w') as fp:
+    with open('token_dist_skill.json', 'w') as fp:
         json.dump(TOKEN_DIST, fp)
     TOKEN_DIST_JOB = bucket.fetch_remote("TOKEN_DIST_JOB")
-    with open('data/token_dist_job.json', 'w') as fp:
+    with open('token_dist_job.json', 'w') as fp:
         json.dump(TOKEN_DIST_JOB, fp)
 
 # list of punctuation
