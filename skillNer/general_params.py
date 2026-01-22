@@ -24,7 +24,7 @@ SKILL_TO_COLOR_TAILWIND = {
 
 # init remote bucket to fetch db in case they don't exist locally
 bucket = RemoteBucket(
-    branch="first_release"
+    branch="master"
 )
 
 # load local data
@@ -32,22 +32,31 @@ bucket = RemoteBucket(
 try:
     with open('skill_db_relax_20.json') as json_file:
         SKILL_DB = json.load(json_file)
+    with open('job_db_relax_20.json') as json_file:
+        JOB_DB = json.load(json_file)
 except:
     SKILL_DB = bucket.fetch_remote("SKILL_DB")
     # dump data
     with open('skill_db_relax_20.json', 'w') as fp:
         json.dump(SKILL_DB, fp)
+    JOB_DB = bucket.fetch_remote("JOB_DB")
+    with open('job_db_relax_20.json', 'w') as fp:
+        json.dump(JOB_DB, fp)
 
 # load token distribution dict
 try:
-    with open('token_dist.json') as json_file:
+    with open('token_dist_skill.json') as json_file:
         TOKEN_DIST = json.load(json_file)
+    with open('token_dist_job.json') as json_file:
+        TOKEN_DIST_JOB = json.load(json_file)
 except:
     TOKEN_DIST = bucket.fetch_remote("TOKEN_DIST")
     # dump data
-    with open('token_dist.json', 'w') as fp:
+    with open('data/token_dist_skill.json', 'w') as fp:
         json.dump(TOKEN_DIST, fp)
-
+    TOKEN_DIST_JOB = bucket.fetch_remote("TOKEN_DIST_JOB")
+    with open('data/token_dist_job.json', 'w') as fp:
+        json.dump(TOKEN_DIST_JOB, fp)
 
 # list of punctuation
 LIST_PUNCTUATIONS = ['/', '·', ',', '.',

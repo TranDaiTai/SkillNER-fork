@@ -1,0 +1,11 @@
+spacy>=3.0
+nltk
+jellyfish
+numpy
+scipy
+pandas
+
+[dev]
+black
+flake8
+pytest
