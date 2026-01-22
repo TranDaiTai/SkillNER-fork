@@ -5,10 +5,10 @@ import requests
 MAPPING_NAME_URL = {
     # "SKILL_DB": "buckets/skill_db_relax_20.json",
     # "TOKEN_DIST": "buckets/token_dist.json"
-    "SKILL_DB": "data/skill_db_relax_20.json",
-    "TOKEN_DIST": "data/token_dist_skill.json",
-    "JOB_DB": "data/job_db_relax_20.json",
-    "TOKEN_DIST_JOB": "data/token_dist_job.json"
+    "SKILL_DB": "buckets/skill_db_relax_20.json",
+    "TOKEN_DIST": "buckets/token_dist_skill.json",
+    "JOB_DB": "buckets/job_db_relax_20.json",
+    "TOKEN_DIST_JOB": "buckets/token_dist_job.json"
 }
 
 

@@ -48,7 +48,6 @@ class SkillsProcessor:
             raise FileNotFoundError(f"Không tìm thấy file raw: {self.raw_path}")
 
         # Load spaCy
-        print("Đang load spaCy model...")
         self.nlp = spacy.load(spacy_model)
 
         # Cleaner chuẩn SkillNER
@@ -110,14 +109,12 @@ class SkillsProcessor:
         Returns:
             Dict: {skill_id: {skill_name, skill_type, ...}}
         """
-        print("Đang đọc raw data...")
         with open(self.raw_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
         processed_skills = {}
         skipped_count = 0
 
-        print("Đang xử lý từng skill...")
         for item in data:
             skill_id = item['id']
             skill_name_raw = item['name']
@@ -148,7 +145,6 @@ class SkillsProcessor:
                 "abbreviation": abbrev
             }
 
-        print(f"Đã bỏ qua {skipped_count} skill rỗng sau clean.")
         return processed_skills
 
     def save(self, processed_data: Dict, output_path: Optional[str] = None):
