@@ -25,6 +25,12 @@ skills_cleaner = Cleaner(
     ]
 )
 
+
+def remove_description(text: str) -> str:
+    # Loại bỏ mô tả trong ngoặc đơn hoặc ngoặc vuông
+    matched = re.sub(r"\s*\([^)]*\)\s*", "", text)
+    return matched
+
 # Stemmer
 stemmer = PorterStemmer()
 def stem_text(text: str) -> str:
@@ -45,7 +51,7 @@ def extract_abbreviation(raw_name: str) -> str:
     raw_name = raw_name.strip()
     
     # Case 1: Tìm trong ngoặc đơn cuối cùng (ví dụ: "FxCop Analyzers (FxCop)")
-    match_paren = re.search(r'\(([^)]+)\)\s*$', raw_name)
+    match_paren = re.search(r'\(([^)]+)\)\s*', raw_name)
     if match_paren:
         candidate = match_paren.group(1).strip()
         # Nếu candidate là viết tắt (toàn uppercase, hoặc ngắn + không khoảng trắng nhiều)
@@ -56,12 +62,12 @@ def extract_abbreviation(raw_name: str) -> str:
     
     # Case 2: Tìm viết tắt uppercase ở cuối tên (ngoài ngoặc)
     # Ví dụ: "... (FxCop Analyzers)" nhưng nếu không có ngoặc thì tìm FxCop
-    match_end = re.search(r'\b([A-Z0-9-]{2,})\b\s*$', raw_name)
-    if match_end:
-        candidate = match_end.group(1)
-        # Tránh nhầm với số hoặc từ không phải viết tắt
-        if candidate.isupper() or '-' in candidate:
-            return candidate
+    # match_end = re.search(r'\b([A-Z0-9.-]{2,})\b\s*', raw_name)
+    # if match_end:
+    #     candidate = match_end.group(1)
+    #     # Tránh nhầm với số hoặc từ không phải viết tắt
+    #     if candidate.isupper() or '-' in candidate:
+    #         return candidate
     
     return ""
 
@@ -78,7 +84,7 @@ for item in data:
     skills_type = item.get('type', {}).get('name', '')
     
     # Clean giống hệt SkillNER
-    skills_cleaned = skills_cleaner(skills_name_raw)
+    skills_cleaned = skills_cleaner(remove_description(skills_name_raw))
     if not skills_cleaned.strip():
         continue  # bỏ qua nếu rỗng sau clean
     
