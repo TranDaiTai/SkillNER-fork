@@ -166,7 +166,7 @@ Besides, it will help you setup SkillNer on your local machine, in case you are 
 
 ## Cập Nhật Pipeline & Hướng Dẫn Sử Dụng Mạng (Network)
 
-- **Tình trạng:** Tôi đã hoàn thiện quy trình pipeline cho `skills` và đồng thời thêm mới quy trình cho `job` — toàn bộ xử lý (fetch raw, tiền xử lý, tạo surface DB và token distributions) đã được triển khai trong thư mục `skills_processor` và `jobs_processor`.
+- **Tình trạng:** Tôi đã hoàn thiện quy trình pipeline cho `skills` và đồng thời thêm mới quy trình cho `job` — toàn bộ xử lý (fetch raw, tiền xử lý, tạo surface DB và token distributions) đã được triển khai trong thư mục `skills_processor`.
 
 - **Giải thích nhanh các module trong `skills_processor`:**
     - `fetch_raw_skill.py`: Thu thập dữ liệu thô (scrape / API) và lưu vào `data/raw_skillss.json`.
@@ -185,28 +185,3 @@ Besides, it will help you setup SkillNer on your local machine, in case you are 
         - Truyền tham số `repo` khi khởi tạo `RemoteBucket`, hoặc
         - Đặt biến môi trường `SKILLNER_REMOTE_REPO` (giá trị dạng `owner/repo`) để lớp tự động dùng repo đó, hoặc
         - Nếu bạn muốn đọc file cục bộ, đặt `repo='local'` (sẽ đọc các file JSON trong thư mục `data/` của package).
-
-    - Ví dụ sử dụng (Python):
-
-```python
-from skillNer_custom.network.remote_db import RemoteBucket
-
-# fetch từ repo GitHub (owner/repo)
-b = RemoteBucket(branch="main", repo="youruser/yourrepo")
-skill_db = b.fetch_remote("SKILL_DB")
-
-# hoặc dùng dữ liệu local đã có trong thư mục `data/`
-b_local = RemoteBucket(repo="local")
-skill_db_local = b_local.fetch_remote("SKILL_DB")
-```
-
-    - Hoặc đặt biến môi trường (Windows PowerShell):
-
-```powershell
-setx SKILLNER_REMOTE_REPO "youruser/yourrepo"
-```
-
-    - Lưu ý: trong repo của bạn cần giữ nguyên cấu trúc `data/` với tên file như phía trên để `RemoteBucket` có thể tìm đúng đường dẫn.
-
-
-

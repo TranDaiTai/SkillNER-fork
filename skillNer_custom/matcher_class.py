@@ -245,7 +245,8 @@ class SkillsGetter:
             skills.append({'skill_id': id_,
                            'doc_node_value': str(doc[start:end]),
                            'score': 1,
-                           'doc_node_id': list(range(start, end))})
+                           'doc_node_id': list(range(start, end)),
+                            'type': 'full_match'})
             # mutate text tokens metadata (unmatch attr)
             for token in text_obj[start:end]:
                 token.is_matchable = False
@@ -266,7 +267,8 @@ class SkillsGetter:
                 skills.append({'skill_id': id_,
                                'score': 1,
                                'doc_node_value': str(doc[start:end]),
-                               'doc_node_id': [start]})
+                               'doc_node_id': [start],
+                               'type': 'abv'})
                 # mutate matched tokens
                 for token in text_obj[start:end]:
                     token.is_matchable = False
