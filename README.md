@@ -195,24 +195,164 @@ Triển khai gợi ý:
 
 
 
-## Cập Nhật Pipeline & Hướng Dẫn Sử Dụng Mạng (Network)
+## 🔄 Pipeline Xử Lý Skills (Phiên Bản Mới)
 
-- **Tình trạng:** Tôi đã hoàn thiện quy trình pipeline cho `skills` và đồng thời thêm mới quy trình cho `job` — toàn bộ xử lý (fetch raw, tiền xử lý, tạo surface DB và token distributions) đã được triển khai trong thư mục `skills_processor`.
+Pipeline mới được thiết kế lại theo hướng end-to-end, rõ ràng và dễ bảo trì, cho phép chạy toàn bộ hoặc từng bước riêng lẻ, đồng thời hỗ trợ cấu hình endpoint EMSI linh hoạt.
 
-- **Giải thích nhanh các module trong `skills_processor`:**
-    - `fetch_raw_skill.py`: Thu thập dữ liệu thô (scrape / API) và lưu vào `data/raw_skillss.json`.
-    - `create_surf_db_skills.py`: Chuẩn hoá và xây dựng surface database (tên kỹ năng, biến thể) và lưu vào `data/skill_db_relax_20.json`.
-    - `create_token_dist_skills.py`: Tạo phân phối token/token-dist cho các skills, lưu vào `data/token_dist_skill.json`.
-    - `skills_processed.py`: Orchestrator / helper để chạy tuần tự các bước trên và xuất các artifacts đã xử lý.
+Tổng quan luồng xử lý
 
-- **Giải thích nhanh các module trong `jobs_processor`:**
-    - `fetch_raw_job.py`: Thu thập mô tả công việc thô và lưu vào `data/raw_jobs.json`.
-    - `create_surf_db_jobs.py`: Chuẩn hoá tên công việc / cụm từ liên quan và tạo surface DB cho jobs, lưu vào `data/job_db_relax_20.json`.
-    - `create_token_dist_jobs.py`: Tạo token distribution cho dữ liệu job, lưu vào `data/token_dist_job.json`.
-    - `jobs_processed.py`: Orchestrator cho pipeline job, cho phép tái sinh các artifact đã xử lý hoặc chạy từng bước.
+EMSI API
+     ↓
+`raw_skillss.json`
+     ↓
+`skills_processed.json`
+     ↓
+`token_dist_skill.json`
+     ↓
+`skill_db_relax_20.json`
 
-- **Chỉnh network để fetch dữ liệu đã xử lý sẵn từ repo của bạn:**
-    - File `skillNer_custom/network/remote_db.py` đã được cập nhật để hỗ trợ cấu hình linh hoạt:
-        - Truyền tham số `repo` khi khởi tạo `RemoteBucket`, hoặc
-        - Đặt biến môi trường `SKILLNER_REMOTE_REPO` (giá trị dạng `owner/repo`) để lớp tự động dùng repo đó, hoặc
-        - Nếu bạn muốn đọc file cục bộ, đặt `repo='local'` (sẽ đọc các file JSON trong thư mục `data/` của package).
+Pipeline này được điều phối tập trung bởi class `PipelineRunner`.
+
+🧩 Cấu trúc pipeline & các module chính
+
+1️⃣ `pipeline_runner.py` – Orchestrator
+
+Vai trò:
+
+ - Chạy toàn bộ pipeline theo thứ tự chuẩn: Fetch raw skills từ Emsi API → Process raw → Tạo token distribution → Sinh relax skill DB.
+
+Ưu điểm chính:
+
+ - Có thể `force_fetch` hoặc tái sử dụng raw cũ.
+ - In log theo từng bước để dễ debug.
+ - Cho phép cấu hình: `auth_endpoint`, `skills_endpoint`, đường dẫn output.
+
+Sử dụng:
+
+```python
+from pipeline_runner import PipelineRunner
+
+runner = PipelineRunner(
+        client_id="YOUR_ID",
+        client_secret="YOUR_SECRET"
+)
+
+runner.run(force_fetch=False)
+```
+
+2️⃣ `fetch_raw_data.py` – Fetch dữ liệu từ Emsi API
+
+`EmsiSkillsFetcher`
+
+Chức năng:
+
+ - Lấy access token từ Emsi.
+ - Fetch toàn bộ danh sách skills (Lightcast / EMSI).
+ - Cache token để tránh gọi lại nhiều lần.
+ - Lưu raw data ra JSON (`data/raw_skillss.json`).
+
+Đặc điểm kỹ thuật:
+
+ - Timeout & error handling rõ ràng.
+ - Validate response (kiểm tra key `data`).
+ - Endpoint có thể cấu hình mà không sửa code pipeline.
+
+3️⃣ `processed.py` – Chuẩn hoá skill theo chuẩn SkillNER
+
+`SkillsProcessor`
+
+Chức năng:
+
+ - Làm sạch tên skill (Cleaner chuẩn SkillNER).
+ - Loại bỏ mô tả trong ngoặc.
+ - Lemmatize (spaCy) và stem (PorterStemmer).
+ - Trích xuất abbreviation (AWS, SQL, NLP…).
+
+Output: `data/skills_processed.json`
+
+Mỗi skill bao gồm:
+
+```json
+{
+    "skill_name": "...",
+    "skill_type": "...",
+    "skill_cleaned": "...",
+    "skill_len": 2,
+    "skill_lemmed": "...",
+    "skill_stemmed": "...",
+    "match_on_stemmed": false,
+    "abbreviation": "AWS"
+}
+```
+
+👉 Định dạng tương thích trực tiếp với SkillNER gốc.
+
+4️⃣ `create_token_dist.py` – Token Distribution
+
+`TokenDistGenerator`
+
+Chức năng:
+
+ - Tính tần suất token.
+ - Chỉ dùng n-gram (skill_len > 1) để tránh nhiễu.
+ - Phục vụ cho logic relax DB (unique token, rare token).
+
+Output: `data/token_dist_skill.json`
+
+Ví dụ:
+
+```json
+{
+    "data": 2134,
+    "learning": 1876,
+    "cloud": 912
+}
+```
+
+5️⃣ `create_surf_db.py` – Sinh Relax Skill DB
+
+`SkillRelaxDBGenerator`
+
+Chức năng chính:
+
+ - Sinh high surface forms: full, abbreviation.
+ - Sinh low surface forms: stemmed, đảo token (bigram), token hiếm, abbreviation regex.
+
+Logic theo độ dài skill:
+
+ - Skill length 1: match full + stem
+ - Skill length 2: full (lemma) + stem + đảo token
+ - Skill length >2: full (lemma) + match_on_tokens
+
+Output cuối cùng: `data/skill_db_relax_20.json`
+
+👉 Đây là file được dùng trực tiếp bởi `SkillExtractor`.
+
+▶️ Chạy pipeline
+
+Chạy toàn bộ pipeline:
+
+```python
+runner = PipelineRunner()
+runner.run()
+```
+
+Luôn fetch raw mới từ API:
+
+```python
+runner.run(force_fetch=True)
+```
+
+📦 Output sau khi pipeline hoàn tất
+```
+data/
+ ├─ raw_skillss.json
+ ├─ skills_processed.json
+ ├─ token_dist_skill.json
+ └─ skill_db_relax_20.json
+```
+
+Bạn có thể dùng trực tiếp `skill_db_relax_20.json` trong:
+
+`SkillExtractor(nlp, SKILL_DB, PhraseMatcher)`
+
