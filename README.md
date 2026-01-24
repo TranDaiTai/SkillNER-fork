@@ -164,6 +164,37 @@ Besides, it will help you setup SkillNer on your local machine, in case you are 
 
 
 
+## Fuzzy Matching (Typo-tolerant Extraction)
+
+Trong phiên bản mở rộng này, SkillNer đã bổ sung `FuzzyPhraseMatcher` nhằm xử lý các trường hợp nhập sai, thiếu/k dư ký tự, hoặc viết không chuẩn trong CV/JD.
+
+- Vấn đề: matcher hiện có (`full`, `low`, `token`, `uni`) hoạt tốt với dữ liệu đúng chính tả nhưng dễ bỏ sót cụm nhiều token khi có typo (ví dụ `pithon developer`, `ful stack`, `. net ful stack developer`).
+- Mục tiêu: khớp ở mức cụm (phrase-level), chịu lỗi chính tả nhẹ, và không phá vỡ pipeline hiện tại.
+
+Nguyên lý chính của `FuzzyPhraseMatcher`:
+
+- So sánh span trong văn bản với full surface form trong surface DB (multi-token only).
+- Sử dụng độ tương đồng Jaro–Winkler để đánh giá mức giống nhau giữa span và surface form.
+- Chỉ áp dụng cho các entry đa token (multi-token skill / job) để tránh false positive trên single-token.
+
+Hành vi khi fuzzy match thành công:
+
+- Gán thuộc tính `is_matchable = False` cho các token trong span để ngăn các matcher yếu hơn (ví dụ `low` hoặc `token`) khớp lại và “ăn mất” span đó.
+- Trả về annotation tương tự `full_match` (bao gồm `skill_id`, `doc_node_value`, `score`, `doc_node_id`) nhưng với `score` biểu thị độ tương đồng fuzzy.
+
+Lợi ích:
+
+- Bắt được các kỹ năng / job title có typo hoặc viết không chuẩn trong CV/JD.
+- Giữ nguyên thứ tự matcher hiện tại và tránh xung đột bằng cách khoá span khi fuzzy match thành công.
+
+Triển khai gợi ý:
+
+- Thêm `FuzzyPhraseMatcher` như một bước bổ sung trong pipeline matcher, chạy sau `full` matcher nhưng trước `low`/`token` matcher.
+- Cấu hình ngưỡng Jaro–Winkler (ví dụ 0.88) làm tham số có thể điều chỉnh.
+- Chỉ áp dụng cho surface forms có độ dài token >= 2.
+
+
+
 ## Cập Nhật Pipeline & Hướng Dẫn Sử Dụng Mạng (Network)
 
 - **Tình trạng:** Tôi đã hoàn thiện quy trình pipeline cho `skills` và đồng thời thêm mới quy trình cho `job` — toàn bộ xử lý (fetch raw, tiền xử lý, tạo surface DB và token distributions) đã được triển khai trong thư mục `skills_processor`.
