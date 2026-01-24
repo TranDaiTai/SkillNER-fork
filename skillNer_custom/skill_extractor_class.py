@@ -2,6 +2,7 @@
 #
 # installed packs
 from spacy import displacy
+
 # my packs
 from skillNer_custom.text_class import Text
 from skillNer_custom.matcher_class import Matchers, SkillsGetter
@@ -10,10 +11,29 @@ from skillNer_custom.general_params import SKILL_TO_COLOR
 
 from skillNer_custom.visualizer.html_elements import DOM, render_phrase
 from skillNer_custom.visualizer.phrase_class import Phrase
+from skillNer_custom.fuzzy_matcher import FuzzyPhraseMatcher
 
 
 class SkillExtractor:
-    """Main class to annotate skills in a given text and visualize them.
+    """
+    Main class to annotate skills / job titles in a given text.
+
+    PIPELINE OVERVIEW
+    -----------------
+    1. Full match (exact phrase)
+    2. Abbreviation match
+    3. Fuzzy phrase match (typo-tolerant, phrase-level)
+    4. Full uni-gram match
+    5. Low surface match
+    6. Token-level match
+    7. Conflict resolution via n-gram scoring
+
+    IMPORTANT DESIGN NOTE
+    ---------------------
+    - Fuzzy matcher is executed EARLY and directly mutates text_obj
+      by marking matched tokens as `is_matchable = False`
+    - This prevents low-level matchers (lowSurf / token)
+      from stealing parts of a valid fuzzy phrase
     """
 
     def __init__(
@@ -21,40 +41,55 @@ class SkillExtractor:
         nlp,
         skills_db,
         phraseMatcher,
-        tranlsator_func=False
+        tranlsator_func=False,
+        fuzzy_func=False
     ):
-        """Constructor of the class.
+        """
+        Constructor of the class.
 
         Parameters
         ----------
-        nlp : [type]
+        nlp : spacy.Language
             NLP object loaded from spacy.
-        skills_db : [type]
-            A skill database used as a lookup table to annotate skills.
-        phraseMatcher : [type]
-            A phrasematcher loaded from spacy.
-        tranlsator_func :Callable
-            A fucntion to translate text from source language to english def tranlsator_func(text_input: str) -> text_input:str
+        skills_db : dict
+            Skill database used as a lookup table.
+        phraseMatcher : spacy.matcher.PhraseMatcher
+            PhraseMatcher instance.
+        tranlsator_func : Callable | False
+            Optional translation function.
+        fuzzy_func : bool
+            Enable fuzzy phrase matcher.
         """
 
         # params
         self.tranlsator_func = tranlsator_func
+        self.fuzzy_func = fuzzy_func
         self.nlp = nlp
         self.skills_db = skills_db
         self.phraseMatcher = phraseMatcher
 
-        # load matchers: all
+        # --------------------------------------------------
+        # Load ALL deterministic matchers
+        # --------------------------------------------------
         self.matchers = Matchers(
             self.nlp,
             self.skills_db,
             self.phraseMatcher,
-            # self.stop_words
         ).load_matchers()
 
-        # init skill getters
+        # --------------------------------------------------
+        # Load fuzzy phrase matcher
+        # --------------------------------------------------
+        # Fuzzy matcher works on PHRASE level
+        # and handles typo / noisy spans
+        self.fuzzy_matcher = FuzzyPhraseMatcher(
+            self.skills_db,
+        )
+
+        # init skill getters (wrappers around spacy matchers)
         self.skill_getters = SkillsGetter(self.nlp)
 
-        # init utils
+        # init utils (n-gram conflict resolver, scoring, etc.)
         self.utils = Utils(self.nlp, self.skills_db)
         return
 
@@ -63,87 +98,94 @@ class SkillExtractor:
         text: str,
         tresh: float = 0.5
     ) -> dict:
-        """To annotate a given text and thereby extract skills from it.
+        """
+        Annotate skills / job titles in input text.
 
-        Parameters
-        ----------
-        text : str
-            The target text.
-        tresh : float, optional
-            A treshold used to select skills in case of confusion, by default 0.5
+        FUZZY INTEGRATION STRATEGY
+        -------------------------
+        - Fuzzy matcher runs AFTER full & abv match
+        - BEFORE low-level matchers
+        - Fuzzy matcher marks consumed tokens as unmatchable
+        - Its results are returned separately (not mixed into ngram_scored)
 
-        Returns
-        -------
-        dict
-            returns a dictionnary with the text that was used and the annotated skills (see example).
-
-        Examples
-        --------
-        >>> import spacy
-        >>> from spacy.matcher import PhraseMatcher
-        >>> from skillNer.skill_extractor_class import SkillExtractor
-        >>> from skillNer.general_params import SKILL_DB
-        >>> nlp = spacy.load('en_core_web_sm')
-        >>> skill_extractor = SkillExtractor(nlp, SKILL_DB, PhraseMatcher)
-        loading full_matcher ...
-        loading abv_matcher ...
-        loading full_uni_matcher ...
-        loading low_form_matcher ...
-        loading token_matcher ...
-        >>> text = "Fluency in both english and french is mandatory"
-        >>> skill_extractor.annotate(text)
-        {'text': 'fluency in both english and french is mandatory',
-        'results': {'full_matches': [],
-        'ngram_scored': [{'skill_id': 'KS123K75YYK8VGH90NCS',
-            'doc_node_id': [3],
-            'doc_node_value': 'english',
-            'type': 'lowSurf',
-            'score': 1,
-            'len': 1},
-        {'skill_id': 'KS1243976G466GV63ZBY',
-            'doc_node_id': [5],
-            'doc_node_value': 'french',
-            'type': 'lowSurf',
-            'score': 1,
-            'len': 1}]}}
+        This avoids:
+        - developer eating python developer
+        - lowSurf overriding fuzzy phrase
         """
 
-        # check translator
+        # optional translation
         if self.tranlsator_func:
             text = self.tranlsator_func(text)
 
-        # create text object
+        # create text object (tokenized + is_matchable flags)
         text_obj = Text(text, self.nlp)
-        # get matches
+
+        # --------------------------------------------------
+        # 1. FULL MATCH
+        # --------------------------------------------------
         skills_full, text_obj = self.skill_getters.get_full_match_skills(
             text_obj, self.matchers['full_matcher'])
 
-        # tests
-
+        # --------------------------------------------------
+        # 2. ABBREVIATION MATCH
+        # --------------------------------------------------
         skills_abv, text_obj = self.skill_getters.get_abv_match_skills(
             text_obj, self.matchers['abv_matcher'])
 
+        # --------------------------------------------------
+        # 3. FUZZY PHRASE MATCH (TYPO-TOLERANT)
+        # --------------------------------------------------
+        # This step MUTATES text_obj:
+        # matched tokens are marked as is_matchable = False
+        if self.fuzzy_func:
+            # fuzzy matcher WILL mark matched tokens as is_matchable = False
+            fuzzy_matches = self.fuzzy_matcher.match(text_obj)
+        else:
+            fuzzy_matches = []
+        # --------------------------------------------------
+        # 4. FULL UNI-GRAM MATCH
+        # --------------------------------------------------
         skills_uni_full, text_obj = self.skill_getters.get_full_uni_match_skills(
             text_obj, self.matchers['full_uni_matcher'])
 
+        # --------------------------------------------------
+        # 5. LOW SURFACE MATCH
+        # --------------------------------------------------
         skills_low_form, text_obj = self.skill_getters.get_low_match_skills(
             text_obj, self.matchers['low_form_matcher'])
 
+        # --------------------------------------------------
+        # 6. TOKEN MATCH
+        # --------------------------------------------------
         skills_on_token = self.skill_getters.get_token_match_skills(
             text_obj, self.matchers['token_matcher'])
+
+        # deterministic matches
         full_sk = skills_full + skills_abv
-        # process pseudo submatchers output conflicts
+
+        # candidates for n-gram conflict resolution
         to_process = skills_on_token + skills_low_form + skills_uni_full
+
+        # --------------------------------------------------
+        # 7. N-GRAM SCORING & CONFLICT RESOLUTION
+        # --------------------------------------------------
         process_n_gram = self.utils.process_n_gram(to_process, text_obj)
 
         return {
             'text': text_obj.transformed_text,
             'results': {
                 'full_matches': full_sk,
-                'ngram_scored': [match for match in process_n_gram if match['score'] >= tresh],
-
+                'ngram_scored': [
+                    match for match in process_n_gram
+                    if match['score'] >= tresh
+                ],
+                'fuzzy_matches': [
+                    match for match in fuzzy_matches
+                    if match['score'] >= tresh
+                ]
             }
         }
+
 
     def display(
         self,
