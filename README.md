@@ -164,34 +164,65 @@ Besides, it will help you setup SkillNer on your local machine, in case you are 
 
 
 
-## Fuzzy Matching (Typo-tolerant Extraction)
+## Fuzzy Matching (Typo-Tolerant Extraction)
 
-Trong phiên bản mở rộng này, SkillNer đã bổ sung `FuzzyPhraseMatcher` nhằm xử lý các trường hợp nhập sai, thiếu/k dư ký tự, hoặc viết không chuẩn trong CV/JD.
+Trong phiên bản mở rộng này, SkillNer bổ sung mô-đun `FuzzyPhraseMatcher` nhằm xử lý các trường hợp sai chính tả, thiếu/k dư ký tự, hoặc cách viết không chuẩn thường gặp trong CV và JD.
 
-- Vấn đề: matcher hiện có (`full`, `low`, `token`, `uni`) hoạt tốt với dữ liệu đúng chính tả nhưng dễ bỏ sót cụm nhiều token khi có typo (ví dụ `pithon developer`, `ful stack`, `. net ful stack developer`).
-- Mục tiêu: khớp ở mức cụm (phrase-level), chịu lỗi chính tả nhẹ, và không phá vỡ pipeline hiện tại.
+### Vấn đề
 
-Nguyên lý chính của `FuzzyPhraseMatcher`:
+Các matcher hiện có (`full`, `abv`, `low`, `token`, `uni`) hoạt động rất tốt khi dữ liệu đúng chính tả. Tuy nhiên, chúng dễ bỏ sót các cụm nhiều token (multi-token phrases) khi xuất hiện typo, ví dụ:
 
-- So sánh span trong văn bản với full surface form trong surface DB (multi-token only).
-- Sử dụng độ tương đồng Jaro–Winkler để đánh giá mức giống nhau giữa span và surface form.
-- Chỉ áp dụng cho các entry đa token (multi-token skill / job) để tránh false positive trên single-token.
+- `pithon developer`
+- `ful stack`
+- `. net ful stack developer`
 
-Hành vi khi fuzzy match thành công:
+### Mục tiêu
 
-- Gán thuộc tính `is_matchable = False` cho các token trong span để ngăn các matcher yếu hơn (ví dụ `low` hoặc `token`) khớp lại và “ăn mất” span đó.
-- Trả về annotation tương tự `full_match` (bao gồm `skill_id`, `doc_node_value`, `score`, `doc_node_id`) nhưng với `score` biểu thị độ tương đồng fuzzy.
+- Phát hiện cụm skill / job title đa token có lỗi chính tả nhẹ.
+- Chỉ sửa typo (non‑semantic), không mở rộng nghĩa.
+- Không làm gián đoạn hoặc phá vỡ pipeline matcher hiện tại.
 
-Lợi ích:
+### Nguyên lý hoạt động
 
-- Bắt được các kỹ năng / job title có typo hoặc viết không chuẩn trong CV/JD.
-- Giữ nguyên thứ tự matcher hiện tại và tránh xung đột bằng cách khoá span khi fuzzy match thành công.
+`FuzzyPhraseMatcher` hoạt động ở phrase-level với các nguyên tắc sau:
 
-Triển khai gợi ý:
+- So sánh span token trong văn bản với full surface form trong surface DB.
+- Chỉ áp dụng cho multi-token entries (token_len >= 2) để tránh false positive.
+- Sử dụng Jaro–Winkler similarity để đo độ tương đồng giữa span và surface form.
+- Áp dụng thêm token-level gate nhằm đảm bảo mỗi token trong span đủ giống token tương ứng trong skill/job gốc.
 
-- Thêm `FuzzyPhraseMatcher` như một bước bổ sung trong pipeline matcher, chạy sau `full` matcher nhưng trước `low`/`token` matcher.
-- Cấu hình ngưỡng Jaro–Winkler (ví dụ 0.88) làm tham số có thể điều chỉnh.
-- Chỉ áp dụng cho surface forms có độ dài token >= 2.
+### Hành vi khi fuzzy match thành công
+
+Khi một fuzzy match hợp lệ được phát hiện:
+
+- Toàn bộ token trong span được gán `token.is_matchable = False` để ngăn các matcher yếu hơn (low, token, uni) khớp lại và “ăn mất” cụm đã match.
+- Trả về annotation có cấu trúc tương tự `full_match`:
+
+```
+{
+    "skill_id": "<skill_id>",
+    "doc_node_value": "<span text>",
+    "doc_node_id": [<token indices>],
+    "type": "fuzzy",
+    "score": <jaro_winkler_similarity>
+}
+```
+
+Trong đó `score` biểu thị mức độ tương đồng fuzzy giữa span và surface form gốc.
+
+### Lợi ích
+
+- Bắt được skill / job title có typo hoặc cách viết không chuẩn trong CV/JD.
+- Giảm đáng kể false negative ở cấp phrase.
+- Giữ nguyên thứ tự matcher hiện tại và tránh xung đột span bằng cơ chế khoá token (`is_matchable`).
+- Không ảnh hưởng đến các matcher chính xác cao như `full` hoặc `abv`.
+
+### Gợi ý triển khai trong pipeline
+
+- Thêm `FuzzyPhraseMatcher` như một bước bổ sung.
+- Thứ tự khuyến nghị: `full` → `abv` → `fuzzy` → `low` → `token` → `uni`.
+- Cho phép cấu hình ngưỡng Jaro–Winkler (ví dụ: `0.88`–`0.92`) tuỳ domain.
+- Chỉ áp dụng fuzzy cho surface forms có token length ≥ 2.
 
 
 

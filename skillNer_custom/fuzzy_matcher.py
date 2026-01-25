@@ -1,124 +1,124 @@
-import jellyfish
+from rapidfuzz.distance import JaroWinkler
+
 
 class FuzzyPhraseMatcher:
     '''
-    Fuzzy phrase-level matcher dùng để phát hiện CỤM SKILL / JOB TITLE
-    bị sai chính tả (typo), ví dụ:
-        - "pithon developer"  -> "python developer"
-        - "net ful stack developer" -> ".net full stack developer"
+    Fuzzy phrase-level matcher để bắt typo trong CỤM SKILL / JOB TITLE.
 
-    TRIẾT LÝ THIẾT KẾ
-    -----------------
-    - Chỉ match PHRASE (skill_len > 1), không match token đơn lẻ
-    - Chạy SAU full_match / abv_match
-    - Khi match thành công:
-        + Trả về kết quả fuzzy
-        + ĐÁNH DẤU token trong text_obj là không còn matchable
-          để các matcher cấp thấp hơn (lowSurf, token, uni)
-          KHÔNG được ăn mất phrase-level match
-
-    - Không dùng occupied mask / utils bên ngoài
-    - Mutate trực tiếp text_obj (phù hợp với thiết kế SkillNER gốc)
+    TRIẾT LÝ
+    --------
+    - Chỉ fuzzy PHRASE (len > 1)
+    - Fuzzy = sửa typo, KHÔNG phải semantic match
+    - Không cho mở rộng / nuốt token
+    - Có token-level gate để diệt false positive
+    - Reject sớm (cheap gate → expensive gate)
+    - Mutate trực tiếp text_obj (đúng thiết kế SkillNER)
     '''
 
-    def __init__(self, skills_db, min_sim=0.92):
-        '''
-        Parameters
-        ----------
-        skills_db : dict
-            Skill database, mỗi skill chứa high_surface_forms['full']
-        min_sim : float
-            Ngưỡng Jaro-Winkler similarity để coi là fuzzy match hợp lệ
-            (thường nằm trong khoảng 0.90 – 0.95)
-        '''
-        self.min_sim = min_sim
+    def __init__(
+        self,
+        skills_db,
+        min_phrase_sim=0.92,
+        min_token_sim=0.80
+    ):
+        self.min_phrase_sim = min_phrase_sim
+        self.min_token_sim = min_token_sim
+        self.skill_db = skills_db
 
-        # Map: skill_id -> full skill phrase (lowercase)
-        self.skill_phrases = {
-            skill_id: skill["high_surfce_forms"]["full"].lower()
+        # 🔥 CACHE SKILL DATA (tối ưu quan trọng)
+        self.skill_cache = {
+            skill_id: {
+                "tokens": skill["high_surfce_forms"]["full"].lower().split(),
+                "phrase": skill["high_surfce_forms"]["full"].lower(),
+                "len": len(skill["high_surfce_forms"]["full"].split())
+            }
             for skill_id, skill in skills_db.items()
         }
 
     def _span_is_matchable(self, text_obj, start, end):
         '''
-        Kiểm tra xem toàn bộ token trong span [start, end)
-        có còn matchable hay không.
-
-        Một span chỉ được fuzzy match nếu:
-        - TẤT CẢ token trong span đều chưa bị matcher khác chiếm
-          (is_matchable == True)
-
-        Điều này đảm bảo:
-        - fuzzy không override full / abv match
-        - fuzzy không chồng chéo các phrase đã được nhận diện
+        Span chỉ được fuzzy nếu toàn bộ token còn matchable
         '''
         for i in range(start, end):
             if not text_obj[i].is_matchable:
                 return False
         return True
 
+    def _token_level_pass(self, span_tokens, skill_tokens):
+        '''
+        Token-level gate (STRICT):
+        MỖI token trong span phải đủ giống token tương ứng trong skill
+        '''
+        for a, b in zip(span_tokens, skill_tokens):
+            if JaroWinkler.similarity(a, b) < self.min_token_sim:
+                return False
+        return True
+
     def match(self, text_obj):
         '''
-        Thực hiện fuzzy phrase matching trên text_obj.
+        Quy trình match (theo thứ tự tối ưu):
 
-        Quy trình:
-        ----------
-        1. Duyệt từng skill phrase trong skill DB
-        2. Trượt cửa sổ token với độ dài = skill_len
-        3. Chỉ xét span còn matchable
-        4. So sánh span_text với skill_phrase bằng Jaro-Winkler
-        5. Nếu similarity >= min_sim:
-            - Ghi nhận fuzzy match
-            - Đánh dấu toàn bộ token trong span là is_matchable = False
-
-        Returns
-        -------
-        list[dict]
-            Danh sách fuzzy phrase matches, mỗi phần tử có dạng:
-            {
-                'skill_id': '<skill_id>_fuzzy',
-                'doc_node_id': [token indices],
-                'doc_node_value': 'span text',
-                'type': 'fuzzy',
-                'score': <similarity score>
-            }
+        1. Span còn matchable?
+        2. Length gate (rẻ)
+        3. First-token cheap fuzzy gate
+        4. Phrase-level fuzzy
+        5. Token-level strict gate
         '''
         matches = []
         tokens = [str(tok).lower() for tok in text_obj]
         text_len = len(tokens)
 
-        for skill_id, skill_phrase in self.skill_phrases.items():
-            skill_tokens = skill_phrase.split()
-            skill_len = len(skill_tokens)
+        for skill_id, info in self.skill_cache.items():
+            skill_tokens = info["tokens"]
+            skill_phrase = info["phrase"]
+            skill_len = info["len"]
 
-            # Chỉ fuzzy phrase, bỏ uni-gram
+            # Chỉ fuzzy phrase
             if skill_len <= 1:
                 continue
 
             for i in range(text_len - skill_len + 1):
                 j = i + skill_len
 
-                # Skip nếu span đã bị matcher khác chiếm
+                # 1️⃣ Span đã bị matcher khác chiếm
                 if not self._span_is_matchable(text_obj, i, j):
                     continue
 
-                span_text = " ".join(tokens[i:j])
+                span_tokens = tokens[i:j]
+                span_text = " ".join(span_tokens)
 
-                sim = jellyfish.jaro_winkler_similarity(
+                # 2️⃣ Length gate (diệt punctuation / semantic drift)
+                if abs(len(span_text) - len(skill_phrase)) > 3:
+                    continue
+
+                # 3️⃣ Cheap first-token gate
+                if JaroWinkler.similarity(
+                    span_tokens[0], skill_tokens[0]
+                ) < 0.7:
+                    continue
+
+                # 4️⃣ Phrase-level fuzzy
+                phrase_sim = JaroWinkler.similarity(
                     span_text, skill_phrase
                 )
+                if phrase_sim < self.min_phrase_sim:
+                    continue
 
-                if sim >= self.min_sim:
-                    matches.append({
-                        "skill_id": f"{skill_id}_fuzzy",
-                        "doc_node_id": list(range(i, j)),
-                        "doc_node_value": span_text,
-                        "type": "fuzzy",
-                        "score": round(sim, 3)
-                    })
+                # 5️⃣ Token-level strict gate (quan trọng nhất)
+                if not self._token_level_pass(span_tokens, skill_tokens):
+                    continue
 
-                    # Đánh dấu token đã được dùng
-                    for k in range(i, j):
-                        text_obj[k].is_matchable = False
+                # ✅ MATCH
+                matches.append({
+                    "skill_id": skill_id,
+                    "doc_node_id": list(range(i, j)),
+                    "doc_node_value": span_text,
+                    "type": "fuzzy",
+                    "score": round(phrase_sim, 3)
+                })
+
+                # Đánh dấu token đã dùng
+                for k in range(i, j):
+                    text_obj[k].is_matchable = False
 
         return matches
