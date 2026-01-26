@@ -18,10 +18,10 @@ class FuzzyPhraseMatcher:
     def __init__(
         self,
         skills_db: dict,
-        min_phrase_sim: float = 0.92,
-        min_token_sim: float = 0.80,
-        min_head_sim: float = 0.90,
-        max_char_diff: int = 5,
+        min_phrase_sim: float = 0.94,
+        min_head_sim: float = 0.92,
+        min_token_sim: float = 0.92,
+        max_char_diff: int = 3,
     ):
         self.skills_db = skills_db
         self.min_phrase_sim = min_phrase_sim
@@ -40,8 +40,14 @@ class FuzzyPhraseMatcher:
 
         for skill_id, skill in skills_db.items():
             phrase = skill["high_surfce_forms"]["full"].lower()
+            
+            # with open("debug_fuzzy.txt", "a", encoding="utf-8") as f:
+            #     f.write(f"Processing skill_id: {phrase}\n")
+                
             tokens = phrase.split()
-
+            # with open("debug_fuzzy_token.txt", "a", encoding="utf-8") as f:
+            #     f.write(f"Processing skill_id:{skill_id} - {tokens}\n")
+            
             # ❌ chỉ fuzzy multi-token
             if len(tokens) <= 1:
                 continue
@@ -51,6 +57,8 @@ class FuzzyPhraseMatcher:
 
             # index theo ký tự đầu của head token
             first_char = tokens[0][0]
+            # if "it" in phrase:
+            #     print("Indexing skill:", skill_id, "->", phrase, "under head char:", first_char)
             self.skill_index[first_char].append(skill_id)
 
     # ==============================
@@ -83,17 +91,20 @@ class FuzzyPhraseMatcher:
 
         tokens = [str(tok).lower() for tok in text_obj]
         text_len = len(tokens)
+        # print("Fuzzy matching at token index: ->", tokens)
 
         for i in range(text_len):
-            if not text_obj[i].is_matchable:
-                continue
-
+            # if not text_obj[i].is_matchable:
+            #     continue
             head_token = tokens[i]
+            # print("Head 'it' → candidates:", head_token)    
+           
             if not head_token:
                 continue
-
+            
             # ===== Candidate pruning theo head-token =====
             candidates = self.skill_index.get(head_token[0], [])
+          
             if not candidates:
                 continue
 
@@ -106,8 +117,8 @@ class FuzzyPhraseMatcher:
                     continue
 
                 # span phải còn matchable
-                if not self._span_is_matchable(text_obj, i, j):
-                    continue
+                # if not self._span_is_matchable(text_obj, i, j):
+                #     continue
 
                 span_tokens = tokens[i:j]
                 span_text = " ".join(span_tokens)
@@ -118,9 +129,18 @@ class FuzzyPhraseMatcher:
                     span_tokens[0], skill_tokens[0]
                 ) < self.min_head_sim:
                     continue
+                # Thêm gate mới trong match(), ngay sau Gate 1 (head sim)
+                # Gate 1.5: token count phải khớp hoặc chênh tối đa 1 (vì typo thường ko thêm/bớt nhiều token)
+                if abs(len(span_tokens) - len(skill_tokens)) > 1:
+                    continue
+
 
                 # ===== Gate 2: độ dài ký tự =====
                 if abs(len(span_text) - len(skill_phrase)) > self.max_char_diff:
+                    continue
+                
+                # Gate 2.5: chênh độ dài char chặt hơn với cụm ngắn
+                if len(skill_tokens) <= 3 and abs(len(span_text) - len(skill_phrase)) > 3:
                     continue
 
                 # ===== Gate 3: phrase-level similarity =====

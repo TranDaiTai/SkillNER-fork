@@ -224,6 +224,67 @@ Trong đó `score` biểu thị mức độ tương đồng fuzzy giữa span v�
 - Cho phép cấu hình ngưỡng Jaro–Winkler (ví dụ: `0.88`–`0.92`) tuỳ domain.
 - Chỉ áp dụng fuzzy cho surface forms có token length ≥ 2.
 
+### Cách dùng (Usage)
+
+Ví dụ kích hoạt `FuzzyPhraseMatcher` trong `SkillExtractor` và cấu hình ngưỡng:
+
+```python
+import spacy
+from spacy.matcher import PhraseMatcher
+from skillNer.general_params import SKILL_DB
+from skillNer.skill_extractor_class import SkillExtractor
+
+nlp = spacy.load("en_core_web_lg")
+# Bật fuzzy và điều chỉnh ngưỡng phrase/token
+extractor = SkillExtractor(
+    nlp,
+    SKILL_DB,
+    PhraseMatcher,
+    fuzzy_func=True
+)
+
+text = "We are looking for a pithon developer with ful stack experience"
+annotations = extractor.annotate(text, tresh=0.5)
+
+# Kết quả fuzzy nằm trong annotations['results']['fuzzy_matches']
+print(annotations['results']['fuzzy_matches'])
+```
+
+- Kết quả fuzzy trả về dạng annotation với `type: "fuzzy"` và trường `score` là độ tương đồng.
+
+### Chi tiết triển khai (Implementation details)
+
+Fuzzy implementation trong mã nguồn nằm ở `skillNer_custom/fuzzy_matcher.py`. Tóm tắt hành vi thực tế của matcher:
+
+- Index & preprocessing:
+    - Chỉ áp dụng cho surface forms đa token (token_len >= 2).
+    - Precompute `skill_tokens` và `skill_phrases` từ `high_surfce_forms['full']` của `SKILL_DB`.
+    - Tạo chỉ mục đơn giản theo ký tự đầu của token đầu (head token) để prune candidate nhanh.
+
+- Quy trình match (gates, từ rẻ → đắt):
+    1. Candidate pruning theo ký tự đầu của head token (index lookup).
+    2. Head-token similarity: kiểm tra Jaro–Winkler giữa token đầu của span và token đầu của skill (`min_head_sim`).
+    3. Token count gate: chấp nhận chênh lệch số token tối đa 1 (typo hiếm khi thêm/bớt nhiều token).
+    4. Char-length gate: chênh lệch số ký tự giữa span và surface form phải nhỏ (tham số `max_char_diff`), với ràng buộc chặt hơn cho cụm ngắn.
+    5. Phrase-level Jaro–Winkler: tính similarity giữa toàn cụm (`span_text`) và surface form gốc, so sánh với `min_phrase_sim`.
+    6. Token-level strict gate: kiểm tra Jaro–Winkler cặp token tương ứng từng token (mỗi token phải >= `min_token_sim`).
+
+- Khi tất cả gate được vượt qua:
+    - Trả về annotation với `type: "fuzzy"` và `score` = phrase-level Jaro–Winkler (làm tròn).
+    - Gán `token.is_matchable = False` cho toàn bộ token trong span (khóa span để tránh match bởi các matcher yếu hơn).
+
+- Tham số cấu hình (mặc định theo mã hiện tại):
+    - `min_phrase_sim` = 0.94  (ngưỡng toàn cụm)
+    - `min_head_sim` = 0.92    (ngưỡng token đầu)
+    - `min_token_sim` = 0.92   (ngưỡng từng token)
+    - `max_char_diff` = 3      (giới hạn chênh độ dài ký tự)
+
+Ghi chú:
+- Các giá trị mặc định ở trên là những giá trị trong `skillNer_custom/fuzzy_matcher.py`; `SkillExtractor` hiện hỗ trợ truyền `fuzzy_min_phrase_sim` và `fuzzy_min_token_sim` khi khởi tạo để điều chỉnh hai ngưỡng chính. Tham số `min_head_sim` và `max_char_diff` có sẵn trong `FuzzyPhraseMatcher` nhưng sử dụng giá trị mặc định nếu không truyền trực tiếp khi khởi tạo matcher.
+- Thiết kế hướng đến hiệu năng: index theo ký tự đầu + nhiều gate rẻ để loại sớm candidates trước khi tính similarity toàn cụm (tương đối tốn tài nguyên).
+
+Khi cần điều chỉnh sâu hơn (ví dụ giảm/nghiêm gate head-token hoặc tăng `max_char_diff` cho domain nhiều lỗi), bạn có thể khởi tạo `FuzzyPhraseMatcher` trực tiếp và truyền các tham số vào `SkillExtractor` hoặc thay thế instance `self.fuzzy_matcher` sau khi tạo `SkillExtractor`.
+
 
 
 ## 🔄 Pipeline Xử Lý Skills (Phiên Bản Mới)

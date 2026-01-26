@@ -121,6 +121,17 @@ class SkillExtractor:
         text_obj = Text(text, self.nlp)
 
         # --------------------------------------------------
+        # 3. FUZZY PHRASE MATCH (TYPO-TOLERANT)
+        # --------------------------------------------------
+        # This step MUTATES text_obj:
+        # matched tokens are marked as is_matchable = False
+        if self.fuzzy_func:
+            # fuzzy matcher WILL mark matched tokens as is_matchable = False
+            fuzzy_matches = self.fuzzy_matcher.match(text_obj)
+        else:
+            fuzzy_matches = []
+
+        # --------------------------------------------------
         # 1. FULL MATCH
         # --------------------------------------------------
         skills_full, text_obj = self.skill_getters.get_full_match_skills(
@@ -132,16 +143,7 @@ class SkillExtractor:
         skills_abv, text_obj = self.skill_getters.get_abv_match_skills(
             text_obj, self.matchers['abv_matcher'])
 
-        # --------------------------------------------------
-        # 3. FUZZY PHRASE MATCH (TYPO-TOLERANT)
-        # --------------------------------------------------
-        # This step MUTATES text_obj:
-        # matched tokens are marked as is_matchable = False
-        if self.fuzzy_func:
-            # fuzzy matcher WILL mark matched tokens as is_matchable = False
-            fuzzy_matches = self.fuzzy_matcher.match(text_obj)
-        else:
-            fuzzy_matches = []
+        
         # --------------------------------------------------
         # 4. FULL UNI-GRAM MATCH
         # --------------------------------------------------
