@@ -100,16 +100,16 @@ class SkillRelaxDBGenerator:
                     low_forms.append(stemmed)
                     low_forms.append(' '.join(stemmed_tokens[::-1]))
 
-                    # Token cuối nếu unique
-                    last_token = stemmed_tokens[-1]
-                    if self.TOKEN_DIST.get(last_token, 0) == 1:
-                        low_forms.append(last_token)
+                    # # Token cuối nếu unique
+                    # last_token = stemmed_tokens[-1]
+                    # if self.TOKEN_DIST.get(last_token, 0) == 1:
+                    #     low_forms.append(last_token)
 
-                    # Token đầu nếu rất hiếm so với token cuối (ít dùng, có thể bỏ)
-                    first_token = stemmed_tokens[0]
-                    if (self.TOKEN_DIST.get(last_token, 1) > 0 and 
-                        self.TOKEN_DIST.get(first_token, 0) / self.TOKEN_DIST.get(last_token, 1) < self.relax_param):
-                        low_forms.append(first_token)
+                    # # Token đầu nếu rất hiếm so với token cuối (ít dùng, có thể bỏ)
+                    # first_token = stemmed_tokens[0]
+                    # if (self.TOKEN_DIST.get(last_token, 1) > 0 and 
+                    #     self.TOKEN_DIST.get(first_token, 0) / self.TOKEN_DIST.get(last_token, 1) < self.relax_param):
+                    #     low_forms.append(first_token)
 
             elif skill_len > 2:
                 high_forms['full'] = lemmed
